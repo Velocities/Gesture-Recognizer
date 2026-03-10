@@ -12,7 +12,7 @@ import time
 # Path to the gesture recognition model
 GESTURE_MODEL = "gesture_recognizer.task"  # Update this to the correct path where the model is saved, if not in current directory
 HAND_MODEL = 'hand_landmarker.task'
-
+DEBUG_CONSOLE = True
 # Initialize the Gesture Recognizer
 
 VisionRunningMode = vision.RunningMode
@@ -56,7 +56,13 @@ def pinky_is_straight(landmarks: list[tuple]) -> bool:
 
     # We have some tolerance, but generally expect minimal distance
     # between each adjacent marked point on the pinky finger
-    return distance(pinky_pip, pinky_dip) < 0.05 and distance(pinky_dip, pinky_tip) < 0.05
+    pinky_pip_dip_distance = distance(pinky_pip, pinky_dip)
+    pinky_dip_tip_distance = distance(pinky_dip, pinky_tip)
+    if DEBUG_CONSOLE:
+        print(f'Pinky: Pip to Dip distance == {pinky_pip_dip_distance}')
+        print(f'Pinky: Dip to Tip distance == {pinky_dip_tip_distance}')
+    
+    return pinky_pip_dip_distance < 0.05 and pinky_dip_tip_distance < 0.05
 
 # We could just check that the pinky is close to the third finger tip,
 # but we need to distinguish between which hand by using coordinate
@@ -70,7 +76,13 @@ def recognize_left_hand_pointing_right(landmarks: list[tuple]) -> bool:
     # If the tips of your third finger and pinky finger are close together,
     # your pinky is in a (relatively) straight line, and your pinky is to the
     # left of your third finger, then this is true
-    return distance(pinky_tip, third_finger_tip) < 1 and wrist[0] < pinky_mcp[0] and pinky_is_straight(landmarks)
+    pinky_third_tips_distance = distance(pinky_tip, third_finger_tip)
+    if DEBUG_CONSOLE:
+        print(f'LEFT hand pointing RIGHT test')
+        print(f'pinky third tips distance: {pinky_third_tips_distance}')
+        print(f'wrist.x == {wrist[0]} and pinky_mcp.x == {pinky_mcp[0]} - {wrist[0] < pinky_mcp[0]}')
+
+    return pinky_third_tips_distance < 1 and wrist[0] < pinky_mcp[0] and pinky_is_straight(landmarks)
 
 def recognize_right_hand_pointing_left(landmarks: list[tuple]) -> bool:
     wrist = landmarks[0]
@@ -81,7 +93,13 @@ def recognize_right_hand_pointing_left(landmarks: list[tuple]) -> bool:
     # If the tips of your third finger and pinky finger are close together,
     # your pinky is in a (relatively) straight line, and your pinky is to the
     # left of your third finger, then this is true
-    return distance(pinky_tip, third_finger_tip) < 1 and wrist[0] > pinky_mcp[0] and pinky_is_straight(landmarks)
+    pinky_third_tips_distance = distance(pinky_tip, third_finger_tip)
+    if DEBUG_CONSOLE:
+        print(f'RIGHT hand pointing LEFT test')
+        print(f'pinky third tips distance: {pinky_third_tips_distance}')
+        print(f'wrist.x == {wrist[0]} and pinky_mcp.x == {pinky_mcp[0]} - {wrist[0] > pinky_mcp[0]}')
+
+    return pinky_third_tips_distance < 1 and wrist[0] > pinky_mcp[0] and pinky_is_straight(landmarks)
 
 SCROLL_LENGTH = 100
 
@@ -139,8 +157,10 @@ def main():
                 if recognize_point_to_screen(landmarks):
                     pyautogui.leftClick()
                 elif recognize_left_hand_pointing_right(landmarks):
+                    # Go to Next Server in Discord
                     pyautogui.hotkey('ctrl', 'alt', 'down')
                 elif recognize_right_hand_pointing_left(landmarks):
+                    # Go to Previous Server in Discord
                     pyautogui.hotkey('ctrl', 'alt', 'up')
 
             # Display recognized gesture and confidence 
