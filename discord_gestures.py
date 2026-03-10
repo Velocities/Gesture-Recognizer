@@ -44,6 +44,9 @@ def recognize_ok(landmarks):
     index_tip = landmarks[8]
     return distance(thumb_tip, index_tip) < 0.05
 
+def recognize_left_hand_pointing_right(landmarks):
+    pass
+
 def main():
     # Initialize video capture
     cap = cv2.VideoCapture(0)  # 0 is the default webcam
@@ -72,9 +75,6 @@ def main():
             recognized_gesture = result.gestures[0][0].category_name
             confidence = result.gestures[0][0].score
 
-            lm = hand_result.hand_landmarks[0]
-            landmarks = [(p.x, p.y) for p in lm]
-
             # Pressing keys for discord shortcuts with pyautogui based on recognized gesture
             if recognized_gesture == "Thumb_Up":
                 pyautogui.scroll(20)
@@ -83,13 +83,13 @@ def main():
             elif recognized_gesture == "Pointing_Up":
                 pyautogui.leftClick()
                 time.sleep(1)
-            if hand_result.hand_landmarks:
-                if recognize_ok(landmarks):
-                    pyautogui.hotkey('ctrl', 'alt', 'down')
-                    time.sleep(1)
-                elif recognized_gesture == "Open_Palm":
-                    pyautogui.hotkey('ctrl', 'alt', 'up')
-                    time.sleep(1)
+
+        if hand_result.hand_landmarks:
+            lm = hand_result.hand_landmarks[0]
+            landmarks = [(p.x, p.y) for p in lm]
+            if recognize_ok(landmarks):
+                pyautogui.hotkey('ctrl', 'alt', 'down')
+                time.sleep(1)
 
             # Display recognized gesture and confidence 
             cv2.putText(image, f"Gesture: {recognized_gesture} ({confidence:.2f})", 
