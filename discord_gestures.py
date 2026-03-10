@@ -44,52 +44,88 @@ def recognize_ok(landmarks):
     index_tip = landmarks[8]
     return distance(thumb_tip, index_tip) < 0.05
 
-def recognize_point_to_screen(landmarks):
+def recognize_point_to_screen(landmarks: list[tuple]) -> bool:
     index_tip = landmarks[8]
-    pass
+    # Temporary (to be changed with implementation)
+    return False
+
+def pinky_is_straight(landmarks: list[tuple]) -> bool:
+    pinky_pip = landmarks[18]
+    pinky_dip = landmarks[19]
+    pinky_tip = landmarks[20]
+
+    # We have some tolerance, but generally expect minimal distance
+    # between each adjacent marked point on the pinky finger
+    return distance(pinky_pip, pinky_dip) < 0.05 and distance(pinky_dip, pinky_tip) < 0.05
 
 # We could just check that the pinky is close to the third finger tip,
 # but we need to distinguish between which hand by using coordinate
 # directions too
-def recognize_left_hand_pointing_right(landmarks):
-    pass
+def recognize_left_hand_pointing_right(landmarks: list[tuple]) -> bool:
+    wrist = landmarks[0]
+    pinky_mcp = landmarks[17]
+    pinky_tip = landmarks[20]
+    third_finger_tip = landmarks[16]
 
-def recognize_right_hand_pointing_left(landmarks):
-    pass
+    # If the tips of your third finger and pinky finger are close together,
+    # your pinky is in a (relatively) straight line, and your pinky is to the
+    # left of your third finger, then this is true
+    return distance(pinky_tip, third_finger_tip) < 1 and wrist[0] < pinky_mcp[0] and pinky_is_straight(landmarks)
+
+def recognize_right_hand_pointing_left(landmarks: list[tuple]) -> bool:
+    wrist = landmarks[0]
+    pinky_mcp = landmarks[17]
+    pinky_tip = landmarks[20]
+    third_finger_tip = landmarks[16]
+
+    # If the tips of your third finger and pinky finger are close together,
+    # your pinky is in a (relatively) straight line, and your pinky is to the
+    # left of your third finger, then this is true
+    return distance(pinky_tip, third_finger_tip) < 1 and wrist[0] > pinky_mcp[0] and pinky_is_straight(landmarks)
+
+SCROLL_LENGTH = 100
+
 
 def main():
     # Initialize video capture
     cap = cv2.VideoCapture(0)  # 0 is the default webcam
 
     while cap.isOpened():
-        success, image = cap.read()
+        success, frame = cap.read()
         if not success:
             print("Ignoring empty camera frame.")
             continue
 
         # Flip the image horizontally and convert the BGR image to RGB.
-        frame = cv2.flip(image, 1)
-        frame_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        frame = cv2.flip(frame, 1)
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         # Convert the image to a Mediapipe Image object for the gesture recognizer
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+        mp_image = mp.Image(
+            image_format=mp.ImageFormat.SRGB,
+            data=frame_rgb
+        )
         timestamp = int(time.time() * 1000)
 
-        # Perform gesture recognition on the image
-        result = gesture_recognizer.recognize_for_video(mp_image, timestamp)
-        # Also run the hand_landmarker model
+        # Run both recognition models
         hand_result = hand_landmarker.detect_for_video(mp_image, timestamp)
+        gesture_result = gesture_recognizer.recognize_for_video(mp_image, timestamp)
+
+        detected_text = "None"
 
         # Draw the gesture recognition results on the image
-        if result.gestures:
-            recognized_gesture = result.gestures[0][0].category_name
-            confidence = result.gestures[0][0].score
+        if gesture_result.gestures:
+            recognized_gesture = gesture_result.gestures[0][0].category_name
+            confidence = gesture_result.gestures[0][0].score
 
             # Pressing keys for discord shortcuts with pyautogui based on recognized gesture
-            if recognized_gesture == "Thumb_Up":
-                pyautogui.scroll(20)
-            elif recognized_gesture == "Thumb_Down":
-                pyautogui.scroll(-20)
+            if confidence > 0.51:
+                if recognized_gesture == "Thumb_Up":
+                    pyautogui.scroll(SCROLL_LENGTH)
+                    detected_text = f"CANNED: {recognized_gesture}"
+                elif recognized_gesture == "Thumb_Down":
+                    pyautogui.scroll(-SCROLL_LENGTH)
+                    detected_text = f"CANNED: {recognized_gesture}"
 
         if hand_result.hand_landmarks:
             lm = hand_result.hand_landmarks[0]
@@ -99,22 +135,20 @@ def main():
                 px = int(x * frame.shape[1])
                 py = int(y * frame.shape[0])
                 cv2.circle(frame, (px, py), 4, (0, 255, 0), -1)
-            if recognize_point_to_screen(landmarks):
-                pyautogui.leftClick()
-                time.sleep(1)
-            elif recognize_left_hand_pointing_right(landmarks):
-                pyautogui.hotkey('ctrl', 'alt', 'down')
-                time.sleep(1)
-            elif recognize_right_hand_pointing_left(landmarks):
-                pyautogui.hotkey('ctrl', 'alt', 'up')
-                time.sleep(1)
+            if detected_text == "None":
+                if recognize_point_to_screen(landmarks):
+                    pyautogui.leftClick()
+                elif recognize_left_hand_pointing_right(landmarks):
+                    pyautogui.hotkey('ctrl', 'alt', 'down')
+                elif recognize_right_hand_pointing_left(landmarks):
+                    pyautogui.hotkey('ctrl', 'alt', 'up')
 
             # Display recognized gesture and confidence 
-            cv2.putText(image, f"Gesture: {recognized_gesture} ({confidence:.2f})", 
+            cv2.putText(frame, f"Gesture: {recognized_gesture} ({confidence:.2f})", 
                         (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
         # Display the resulting image (can comment this out for better performance later on)
-        cv2.imshow('Gesture Recognition', image)
+        cv2.imshow('Gesture Recognition', frame)
 
         if cv2.waitKey(5) & 0xFF == 27:
             break
