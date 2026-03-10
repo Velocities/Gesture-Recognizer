@@ -6,6 +6,7 @@ from mediapipe.tasks.python.vision import GestureRecognizer, GestureRecognizerOp
 from mediapipe.tasks.python import BaseOptions
 
 import pyautogui
+import time
 
 # Path to the gesture recognition model
 GESTURE_MODEL = "gesture_recognizer.task"  # Update this to the correct path where the model is saved, if not in current directory
@@ -49,10 +50,13 @@ def main():
                 pyautogui.scroll(-20)
             elif recognized_gesture == "Pointing_Up":
                 pyautogui.leftClick()
+                time.sleep(1)
             elif recognized_gesture == "Closed_Fist":
                 pyautogui.hotkey('ctrl', 'alt', 'down')
+                time.sleep(1)
             elif recognized_gesture == "Open_Palm":
                 pyautogui.hotkey('ctrl', 'alt', 'up')
+                time.sleep(1)
 
             # Display recognized gesture and confidence 
             cv2.putText(image, f"Gesture: {recognized_gesture} ({confidence:.2f})", 
