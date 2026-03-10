@@ -44,7 +44,17 @@ def recognize_ok(landmarks):
     index_tip = landmarks[8]
     return distance(thumb_tip, index_tip) < 0.05
 
+def recognize_point_to_screen(landmarks):
+    index_tip = landmarks[8]
+    pass
+
+# We could just check that the pinky is close to the third finger tip,
+# but we need to distinguish between which hand by using coordinate
+# directions too
 def recognize_left_hand_pointing_right(landmarks):
+    pass
+
+def recognize_right_hand_pointing_left(landmarks):
     pass
 
 def main():
@@ -58,11 +68,11 @@ def main():
             continue
 
         # Flip the image horizontally and convert the BGR image to RGB.
-        image = cv2.flip(image, 1)
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        frame = cv2.flip(image, 1)
+        frame_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         # Convert the image to a Mediapipe Image object for the gesture recognizer
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_rgb)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
         timestamp = int(time.time() * 1000)
 
         # Perform gesture recognition on the image
@@ -80,15 +90,23 @@ def main():
                 pyautogui.scroll(20)
             elif recognized_gesture == "Thumb_Down":
                 pyautogui.scroll(-20)
-            elif recognized_gesture == "Pointing_Up":
-                pyautogui.leftClick()
-                time.sleep(1)
 
         if hand_result.hand_landmarks:
             lm = hand_result.hand_landmarks[0]
             landmarks = [(p.x, p.y) for p in lm]
-            if recognize_ok(landmarks):
+            # Draw landmarks
+            for x, y in landmarks:
+                px = int(x * frame.shape[1])
+                py = int(y * frame.shape[0])
+                cv2.circle(frame, (px, py), 4, (0, 255, 0), -1)
+            if recognize_point_to_screen(landmarks):
+                pyautogui.leftClick()
+                time.sleep(1)
+            elif recognize_left_hand_pointing_right(landmarks):
                 pyautogui.hotkey('ctrl', 'alt', 'down')
+                time.sleep(1)
+            elif recognize_right_hand_pointing_left(landmarks):
+                pyautogui.hotkey('ctrl', 'alt', 'up')
                 time.sleep(1)
 
             # Display recognized gesture and confidence 
