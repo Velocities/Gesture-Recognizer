@@ -1,180 +1,179 @@
 import cv2
-import mediapipe as mp
-
-# Import the tasks API for gesture recognition
-from mediapipe.tasks.python.vision import GestureRecognizer, GestureRecognizerOptions
-from mediapipe.tasks.python import BaseOptions, vision
-
-import pyautogui
-import numpy as np
 import time
+import numpy as np
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+import pyautogui
 
-# Path to the gesture recognition model
-GESTURE_MODEL = "gesture_recognizer.task"  # Update this to the correct path where the model is saved, if not in current directory
-HAND_MODEL = 'hand_landmarker.task'
-DEBUG_CONSOLE = True
-# Initialize the Gesture Recognizer
+HAND_MODEL = "hand_landmarker.task"
+GESTURE_MODEL = "gesture_recognizer.task"
 
+def distance(p1, p2):
+  return np.linalg.norm(np.array(p1) - np.array(p2))
+
+def recognize_ok(landmarks):
+  thumb_tip = landmarks[4]
+  index_tip = landmarks[8]
+  return distance(thumb_tip, index_tip) < 0.05
+
+def recognize_palm(landmarks):
+  finger_tips = [8, 12, 16, 20]
+  finger_pips = [6, 10, 14, 18]
+
+  for tip, pip in zip(finger_tips, finger_pips):
+    if landmarks[tip][1] < landmarks[pip][1]:
+      return False
+
+  return True
+
+def pointing(landmarks):
+  finger_tips = [6, 7, 8]
+
+  for i in range(2):
+    dist = abs(distance(landmarks[5], landmarks[17])) / 5
+    if abs(distance(landmarks[finger_tips[i]], landmarks[finger_tips[i + 1]])) > dist:
+      return False
+  return True
+
+def palm_flat(landmarks):
+  finger_tips = [8, 12, 16, 20]
+  finger_pips = [5, 9, 13, 17]
+  
+  dist = abs(distance(landmarks[5], landmarks[0])) / 5
+  for i in range(3):
+    if abs(landmarks[finger_tips[i]][1] - landmarks[finger_tips[i + 1]][1]) > dist or abs(landmarks[finger_pips[i]][1] - landmarks[finger_pips[i + 1]][1]) > dist:
+      return False
+  return True
+
+def palm_left(landmarks):
+  finger_tips = [8, 12, 16, 20]
+  finger_sips = [7, 11, 15, 19]
+  finger_mips = [6, 10, 14, 18]
+  finger_pips = [5, 9, 13, 17]
+
+  for tip, pip, sip, mip in zip(finger_tips, finger_pips, finger_sips, finger_mips):
+    if landmarks[tip][0] > landmarks[sip][0] or landmarks[sip][0] > landmarks[mip][0] or landmarks[mip][0] > landmarks[pip][0]:
+      return False
+  return True
+
+def palm_right(landmarks):
+  finger_tips = [8, 12, 16, 20]
+  finger_sips = [7, 11, 15, 19]
+  finger_mips = [6, 10, 14, 18]
+  finger_pips = [5, 9, 13, 17]
+
+  for tip, pip, sip, mip in zip(finger_tips, finger_pips, finger_sips, finger_mips):
+    if landmarks[tip][0] < landmarks[sip][0] or landmarks[sip][0] < landmarks[mip][0] or landmarks[mip][0] < landmarks[pip][0]:
+      return False
+  return True
+
+BaseOptions = mp.tasks.BaseOptions
 VisionRunningMode = vision.RunningMode
 
-gesture_options = vision.GestureRecognizerOptions(
-    base_options=BaseOptions(model_asset_path=GESTURE_MODEL),
-    running_mode=VisionRunningMode.VIDEO,
-    num_hands=2
-)
-
-gesture_recognizer = vision.GestureRecognizer.create_from_options(
-    gesture_options
-)
-
 hand_options = vision.HandLandmarkerOptions(
-    base_options=BaseOptions(model_asset_path=HAND_MODEL),
-    running_mode=VisionRunningMode.VIDEO,
-    num_hands=2
+  base_options=BaseOptions(model_asset_path=HAND_MODEL),
+  running_mode=VisionRunningMode.VIDEO,
+  num_hands=2
 )
 
 hand_landmarker = vision.HandLandmarker.create_from_options(hand_options)
 
-def distance(p1, p2):
-    return np.linalg.norm(np.array(p1) - np.array(p2))
+gesture_options = vision.GestureRecognizerOptions(
+  base_options=BaseOptions(model_asset_path=GESTURE_MODEL),
+  running_mode=VisionRunningMode.VIDEO,
+  num_hands=2
+)
 
-# Custom gestures we define with the hand_landmarker
-def recognize_ok(landmarks):
-    thumb_tip = landmarks[4]
-    index_tip = landmarks[8]
-    return distance(thumb_tip, index_tip) < 0.05
+gesture_recognizer = vision.GestureRecognizer.create_from_options(
+  gesture_options
+)
 
-def recognize_point_to_screen(landmarks: list[tuple]) -> bool:
-    index_tip = landmarks[8]
-    # Temporary (to be changed with implementation)
-    return False
+cap = cv2.VideoCapture(0)
 
-def pinky_is_straight(landmarks: list[tuple]) -> bool:
-    pinky_pip = landmarks[18]
-    pinky_dip = landmarks[19]
-    pinky_tip = landmarks[20]
+is_pointing = False
 
-    # We have some tolerance, but generally expect minimal distance
-    # between each adjacent marked point on the pinky finger
-    pinky_pip_dip_distance = distance(pinky_pip, pinky_dip)
-    pinky_dip_tip_distance = distance(pinky_dip, pinky_tip)
-    if DEBUG_CONSOLE:
-        print(f'Pinky: Pip to Dip distance == {pinky_pip_dip_distance}')
-        print(f'Pinky: Dip to Tip distance == {pinky_dip_tip_distance}')
+SCROLL_MAGNITUDE = 75
+
+while cap.isOpened():
+  ret, frame = cap.read()
+  if not ret:
+    break
+
+  frame = cv2.flip(frame, 1)
+  frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+  mp_image = mp.Image(
+    image_format=mp.ImageFormat.SRGB,
+    data=frame_rgb
+  )
+
+  timestamp = int(time.time() * 1000)
+
+  # Run both models
+  hand_result = hand_landmarker.detect_for_video(mp_image, timestamp)
+  gesture_result = gesture_recognizer.recognize_for_video(mp_image, timestamp)
+
+  detected_text = "None"
+
+  if gesture_result.gestures and hand_result.hand_landmarks:
+    lm = hand_result.hand_landmarks[0]
     
-    return pinky_pip_dip_distance < 0.05 and pinky_dip_tip_distance < 0.05
+    landmarks = [(p.x, p.y) for p in lm]
 
-# We could just check that the pinky is close to the third finger tip,
-# but we need to distinguish between which hand by using coordinate
-# directions too
-def recognize_left_hand_pointing_right(landmarks: list[tuple]) -> bool:
-    wrist = landmarks[0]
-    pinky_mcp = landmarks[17]
-    pinky_tip = landmarks[20]
-    third_finger_tip = landmarks[16]
+    # Draw landmarks
+    for x, y in landmarks:
+      px = int(x * frame.shape[1])
+      py = int(y * frame.shape[0])
+      cv2.circle(frame, (px, py), 4, (0, 255, 0), -1)
+    
+    top_gesture = gesture_result.gestures[0][0]
+    if top_gesture.category_name != "None":
+      detected_text = f"CANNED: {top_gesture.category_name}"
+      
+      if top_gesture.category_name == "Thumb_Up":
+        pyautogui.scroll(SCROLL_MAGNITUDE)
+      elif top_gesture.category_name == "Thumb_Down":
+        pyautogui.scroll(-SCROLL_MAGNITUDE)
+      elif top_gesture.category_name == "Open_Palm":
+        ...
+      elif top_gesture.category_name == "Closed_Fist":
+        ...
+      elif top_gesture.category_name == "Victory":
+        ...
+      elif top_gesture.category_name == "Love":
+        ...
+    elif pointing(landmarks):
+      detected_text = "Pointing"
+      if not is_pointing:
+        pyautogui.click()
+      is_pointing = True
+    elif palm_flat:
+      if palm_left(landmarks):
+        detected_text = "Palm Left"
+        with pyautogui.hold("ctrl"):
+          with pyautogui.hold("alt"):
+            pyautogui.press("up")
+        time.sleep(.5)
+      elif palm_right(landmarks):
+        detected_text = "Palm Right"
+        with pyautogui.hold("ctrl"):
+          with pyautogui.hold("alt"):
+            pyautogui.press("down")
+        time.sleep(.5)
+    
+    if not pointing(landmarks):
+      is_pointing = False
+    
 
-    # If the tips of your third finger and pinky finger are close together,
-    # your pinky is in a (relatively) straight line, and your pinky is to the
-    # left of your third finger, then this is true
-    pinky_third_tips_distance = distance(pinky_tip, third_finger_tip)
-    if DEBUG_CONSOLE:
-        print(f'LEFT hand pointing RIGHT test')
-        print(f'pinky third tips distance: {pinky_third_tips_distance}')
-        print(f'wrist.x == {wrist[0]} and pinky_mcp.x == {pinky_mcp[0]} - {wrist[0] < pinky_mcp[0]}')
+  cv2.putText(frame, detected_text, (10, 40),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1, (0, 255, 0), 2)
 
-    return pinky_third_tips_distance < 1 and wrist[0] < pinky_mcp[0] and pinky_is_straight(landmarks)
+  cv2.imshow("Gesture System", frame)
 
-def recognize_right_hand_pointing_left(landmarks: list[tuple]) -> bool:
-    wrist = landmarks[0]
-    pinky_mcp = landmarks[17]
-    pinky_tip = landmarks[20]
-    third_finger_tip = landmarks[16]
+  if cv2.waitKey(1) & 0xFF == 27:
+    break
 
-    # If the tips of your third finger and pinky finger are close together,
-    # your pinky is in a (relatively) straight line, and your pinky is to the
-    # left of your third finger, then this is true
-    pinky_third_tips_distance = distance(pinky_tip, third_finger_tip)
-    if DEBUG_CONSOLE:
-        print(f'RIGHT hand pointing LEFT test')
-        print(f'pinky third tips distance: {pinky_third_tips_distance}')
-        print(f'wrist.x == {wrist[0]} and pinky_mcp.x == {pinky_mcp[0]} - {wrist[0] > pinky_mcp[0]}')
-
-    return pinky_third_tips_distance < 1 and wrist[0] > pinky_mcp[0] and pinky_is_straight(landmarks)
-
-SCROLL_LENGTH = 100
-
-
-def main():
-    # Initialize video capture
-    cap = cv2.VideoCapture(0)  # 0 is the default webcam
-
-    while cap.isOpened():
-        success, frame = cap.read()
-        if not success:
-            print("Ignoring empty camera frame.")
-            continue
-
-        # Flip the image horizontally and convert the BGR image to RGB.
-        frame = cv2.flip(frame, 1)
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-        # Convert the image to a Mediapipe Image object for the gesture recognizer
-        mp_image = mp.Image(
-            image_format=mp.ImageFormat.SRGB,
-            data=frame_rgb
-        )
-        timestamp = int(time.time() * 1000)
-
-        # Run both recognition models
-        hand_result = hand_landmarker.detect_for_video(mp_image, timestamp)
-        gesture_result = gesture_recognizer.recognize_for_video(mp_image, timestamp)
-
-        detected_text = "None"
-
-        # Draw the gesture recognition results on the image
-        if gesture_result.gestures:
-            recognized_gesture = gesture_result.gestures[0][0].category_name
-            confidence = gesture_result.gestures[0][0].score
-
-            # Pressing keys for discord shortcuts with pyautogui based on recognized gesture
-            if confidence > 0.51:
-                if recognized_gesture == "Thumb_Up":
-                    pyautogui.scroll(SCROLL_LENGTH)
-                    detected_text = f"CANNED: {recognized_gesture}"
-                elif recognized_gesture == "Thumb_Down":
-                    pyautogui.scroll(-SCROLL_LENGTH)
-                    detected_text = f"CANNED: {recognized_gesture}"
-
-        if hand_result.hand_landmarks:
-            lm = hand_result.hand_landmarks[0]
-            landmarks = [(p.x, p.y) for p in lm]
-            # Draw landmarks
-            for x, y in landmarks:
-                px = int(x * frame.shape[1])
-                py = int(y * frame.shape[0])
-                cv2.circle(frame, (px, py), 4, (0, 255, 0), -1)
-            if detected_text == "None":
-                if recognize_point_to_screen(landmarks):
-                    pyautogui.leftClick()
-                elif recognize_left_hand_pointing_right(landmarks):
-                    # Go to Next Server in Discord
-                    pyautogui.hotkey('ctrl', 'alt', 'down')
-                elif recognize_right_hand_pointing_left(landmarks):
-                    # Go to Previous Server in Discord
-                    pyautogui.hotkey('ctrl', 'alt', 'up')
-
-            # Display recognized gesture and confidence 
-            cv2.putText(frame, f"Gesture: {recognized_gesture} ({confidence:.2f})", 
-                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-
-        # Display the resulting image (can comment this out for better performance later on)
-        cv2.imshow('Gesture Recognition', frame)
-
-        if cv2.waitKey(5) & 0xFF == 27:
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-if __name__ == "__main__":
-    main()
+cap.release()
+cv2.destroyAllWindows()
